@@ -37,7 +37,7 @@ client = discord.Client(intents=intents)
 welcome_channel_id = 1165799413558542446  # ウェルカムメッセージを送信するチャンネルID
 role_id = 1165785520593436764  # メンションしたいロールのID
 welcome_sent = False  # フラグで送信状況を管理
-wait_time = 20  # 秒単位の待機時間
+wait_time = 50  # 秒単位の待機時間
 
 @client.event
 async def on_ready():
