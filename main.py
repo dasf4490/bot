@@ -1,11 +1,12 @@
 import discord
-from discord.ext import tasks
+from discord.ext import tasks, commands  # commandsを追加
 import asyncio
 import os
 from aiohttp import web
 import logging
 from aiohttp import ClientSession
 from datetime import datetime
+import sys  # 再起動用
 import time
 
 # 環境変数からトークンを取得
@@ -18,10 +19,10 @@ if not token:
 else:
     print(f"Token successfully loaded: {token[:5]}****")  # トークンの一部のみ表示で安全性を確保
 
-# Discord botの設定
+# intentsを設定し、Botオブジェクトを作成
 intents = discord.Intents.default()
-intents.members = True  # 新しいメンバーの参加を検知するために必要
-client = discord.Client(intents=intents)
+intents.members = True
+bot = commands.Bot(command_prefix='/', intents=intents)  # commands.Botを使用
 
 # ウェルカムメッセージとロール設定
 welcome_channel_id = 1165799413558542446  # ウェルカムメッセージを送信するチャンネルID
@@ -49,7 +50,7 @@ async def notify_admins(message):
     """管理者にメッセージをDMで送信する"""
     for admin_user_id in admin_user_ids:
         try:
-            admin_user = await client.fetch_user(admin_user_id)
+            admin_user = await bot.fetch_user(admin_user_id)
             if admin_user:
                 async with lock:  # ロックを使用してリソース競合を防止
                     await admin_user.send(message)
@@ -58,6 +59,42 @@ async def notify_admins(message):
                 print(f"管理者ユーザーID {admin_user_id} が見つかりませんでした。")
         except Exception as e:
             print(f"管理者 {admin_user_id} への通知に失敗しました: {e}")
+
+# /restartコマンドの実装
+@bot.command()
+@commands.has_permissions(administrator=True)  # 管理者権限が必要
+async def restart(ctx):
+    """Botを再起動するコマンド"""
+    await ctx.send("再起動しています... 🔄")
+    await bot.close()  # Botのセッションを閉じる
+    os.execl(sys.executable, sys.executable, *sys.argv)  # プロセスを再起動
+
+# 新しいメンバーが参加したときの処理
+@bot.event
+async def on_member_join(member):
+    global welcome_sent
+    try:
+        channel = bot.get_channel(welcome_channel_id)
+        role = member.guild.get_role(role_id)
+
+        if not welcome_sent and channel and role:
+            welcome_sent = True
+            await channel.send(
+                f"こんにちは！{role.mention}の皆さん。「おしゃべりを始める前に、もういくつかステップが残っています。」"
+                f"と出ていると思うので、「了解」を押してルールに同意しましょう。その後に"
+                f"https://discord.com/channels/1165775639798878288/1165775640918773843で"
+                f"認証をして、みんなとお喋りをしましょう！"
+            )
+            await asyncio.sleep(wait_time)
+            welcome_sent = False
+        elif not channel:
+            print("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
+        elif not role:
+            print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
+    except Exception as e:
+        error_message = f"新規メンバー参加時のエラー: {e}"
+        print(error_message)
+        await notify_admins(f"⚠️新規メンバー参加時のエラー:\n{error_message}")
 
 # リクエストログを記録するミドルウェア（`/health`リクエストを除外）
 @web.middleware
@@ -103,7 +140,7 @@ async def send_dm():
     no_errors = True
     for user_id in target_user_ids:
         try:
-            user = await client.fetch_user(user_id)
+            user = await bot.fetch_user(user_id)
             if user:
                 async with lock:  # ロックを使用してリソース競合を防止
                     await user.send("これは1時間ごとのDMテストメッセージです。")
@@ -121,56 +158,23 @@ async def send_dm():
         await notify_admins(f"✅ 過去1時間でエラーは発生しませんでした。\n実行時間: {current_time}")
 
 # Bot起動時にタスクを確認し、開始
-@client.event
+@bot.event
 async def on_ready():
-    print(f'Logged in as {client.user}')
+    print(f'Logged in as {bot.user}')
     if not send_dm.is_running():
         print("send_dmタスクを開始します...")
         send_dm.start()
     else:
         print("send_dmタスクは既に実行中です。")
 
-# 新しいメンバーが参加した際の処理
-@client.event
-async def on_member_join(member):
-    global welcome_sent
-    try:
-        channel = client.get_channel(welcome_channel_id)
-        role = member.guild.get_role(role_id)
-
-        if not welcome_sent and channel and role:
-            welcome_sent = True
-            await channel.send(
-                f"こんにちは！{role.mention}の皆さん。「おしゃべりを始める前に、もういくつかステップが残っています。」"
-                f"と出ていると思うので、「了解」を押してルールに同意しましょう。その後に"
-                f"https://discord.com/channels/1165775639798878288/1165775640918773843で"
-                f"認証をして、みんなとお喋りをしましょう！"
-            )
-            await asyncio.sleep(wait_time)
-            welcome_sent = False
-        elif not channel:
-            print("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
-        elif not role:
-            print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
-    except Exception as e:
-        error_message = f"新規メンバー参加時のエラー: {e}"
-        print(error_message)
-        await notify_admins(f"⚠️新規メンバー参加時のエラー:\n{error_message}")
-
-# WebSocket切断時の再接続
-@client.event
-async def on_disconnect():
-    print("Disconnected from Discord. Automatic reconnection will be handled.")  # 自動再接続に任せる
-
 # メイン関数でBotとWebサーバーを並行実行
 async def main():
     await asyncio.gather(
-        client.start(token),   # Discord Botを起動
-        start_web_server(),    # Webサーバーを起動
-        keep_alive()           # RenderへのPingを実行
+        bot.start(token),   # Discord Botを起動
+        start_web_server(),  # Webサーバーを起動
+        keep_alive()         # RenderへのPing処理を実行
     )
 
-# 実行
 if __name__ == "__main__":
     try:
         asyncio.run(main())
