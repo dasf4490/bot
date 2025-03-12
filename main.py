@@ -4,6 +4,7 @@ import asyncio
 import os
 from aiohttp import web  # ヘルスチェック用ライブラリ
 import logging  # ログ用のライブラリ
+from aiohttp import ClientSession  # 定期Pingのためのクライアントセッション
 
 # 環境変数からトークンを取得
 token = os.getenv("DISCORD_TOKEN")
@@ -58,18 +59,30 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", 8080)  # ポート8080で起動
     await site.start()
 
-# 管理者にエラーメッセージを送信
+# 定期PingをRenderに送信してアイドル状態を防ぐ
+async def keep_alive():
+    async with ClientSession() as session:
+        while True:
+            try:
+                async with session.get("https://<your-app-url>.onrender.com/health") as resp:
+                    print(f"Pinged Render: {resp.status}")
+            except Exception as e:
+                print(f"Failed to ping Render: {e}")
+            await asyncio.sleep(300)  # 300秒（5分）ごとにPing
+
+# 管理者にエラーメッセージを日本語で送信
 async def notify_admins(error_message):
     for admin_user_id in admin_user_ids:
         try:
             admin_user = await client.fetch_user(admin_user_id)  # 管理者ユーザーを取得
             if admin_user:
-                await admin_user.send(f"⚠️エラーが発生しました: {error_message}")
-                print(f"Admin {admin_user_id} notified about the error.")
+                # 日本語でメッセージを送信
+                await admin_user.send(f"⚠️エラーが発生しました:\n{error_message}\n詳細を確認してください。")
+                print(f"Admin {admin_user_id} に通知を送りました。")
             else:
-                print(f"Admin user with ID {admin_user_id} not found.")
+                print(f"管理者ユーザーID {admin_user_id} が見つかりませんでした。")
         except Exception as e:
-            print(f"Failed to notify admin {admin_user_id}: {e}")
+            print(f"管理者 {admin_user_id} への通知に失敗しました: {e}")
 
 # WebSocket接続の切断時の対処
 @client.event
@@ -87,7 +100,7 @@ async def on_disconnect():
 # プログラムのクラッシュを防ぐための対処と管理者通知
 @client.event
 async def on_error(event, *args, **kwargs):
-    error_message = f"An error occurred in event '{event}': {args}, {kwargs}"
+    error_message = f"エラーが発生しました。イベント名: {event}, 引数: {args}, キーワード引数: {kwargs}"
     print(error_message)
     await notify_admins(error_message)  # エラーを管理者に通知
 
@@ -119,7 +132,7 @@ async def on_member_join(member):
         elif not role:
             print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
     except Exception as e:
-        error_message = f"Error in on_member_join: {e}"
+        error_message = f"新規メンバー参加時のエラー: {e}"
         print(error_message)
         await notify_admins(error_message)  # エラーを管理者に通知
 
@@ -127,7 +140,8 @@ async def on_member_join(member):
 async def main():
     await asyncio.gather(
         client.start(token),  # Discord Botを起動
-        start_web_server()    # ヘルスチェック用のWebサーバーを起動
+        start_web_server(),   # ヘルスチェック用のWebサーバーを起動
+        keep_alive()          # 定期Pingタスクを実行
     )
 
 # 実行
