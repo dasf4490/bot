@@ -75,7 +75,7 @@ async def keep_alive():
     async with ClientSession() as session:
         while True:
             try:
-                async with session.get("https://<your-app-url>.onrender.com/health") as resp:
+                async with session.get("https://bot-2ptf.onrender.com/health") as resp:
                     print(f"Pinged Render: {resp.status}")
             except Exception as e:
                 print(f"Failed to ping Render: {e}")
