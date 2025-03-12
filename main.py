@@ -39,18 +39,19 @@ wait_time = 50  # 秒単位の待機時間
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aiohttp.server")
 
-# リクエストログを記録するミドルウェア
+# リクエストログを記録するミドルウェア（`/health`リクエストを除外）
 @web.middleware
 async def log_requests(request, handler):
-    peername = request.transport.get_extra_info("peername")  # クライアントIPとポート情報を取得
-    client_ip = peername[0] if peername else "Unknown IP"
-    client_port = peername[1] if peername else "Unknown Port"
-    logger.info(f"{client_ip}:{client_port} - {request.method} {request.path}")
-    response = await handler(request)
+    response = await handler(request)  # 各リクエストを処理
+    if request.path != "/health":  # `/health`以外のリクエストをログ記録
+        peername = request.transport.get_extra_info("peername")  # クライアントIPを取得
+        client_ip = peername[0] if peername else "Unknown IP"
+        client_port = peername[1] if peername else "Unknown Port"
+        logger.info(f"{client_ip}:{client_port} - {request.method} {request.path}")
     return response
 
 # ヘルスチェック用のエンドポイント（1分間隔でログ出力を制限）
-last_health_check_time = 0  # 最後のヘルスチェックログタイムスタンプを追跡
+last_health_check_time = 0  # 初期値を0に設定
 
 async def health_check(request):
     global last_health_check_time
