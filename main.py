@@ -1,12 +1,13 @@
 import discord
-from discord.ext import tasks, commands  # commandsを追加
+from discord.ext import tasks, commands
+from discord import app_commands
 import asyncio
 import os
 from aiohttp import web
 import logging
 from aiohttp import ClientSession
 from datetime import datetime
-import sys  # 再起動用
+import sys
 import time
 
 # 環境変数からトークンを取得
@@ -22,17 +23,28 @@ else:
 # intentsを設定し、Botオブジェクトを作成
 intents = discord.Intents.default()
 intents.members = True
-bot = commands.Bot(command_prefix='/', intents=intents)  # commands.Botを使用
+
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="/", intents=intents)
+        self.tree = app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        # スラッシュコマンドの同期
+        await self.tree.sync()
+        logger.info("Slash commands synced!")
+
+bot = MyBot()
 
 # ウェルカムメッセージとロール設定
 welcome_channel_id = 1165799413558542446  # ウェルカムメッセージを送信するチャンネルID
 role_id = 1165785520593436764  # メンションしたいロールのID
 
 # 管理者のDiscordユーザーIDリスト
-admin_user_ids = [1073863060843937812, 1175571621025689661]  # 管理者のDiscordユーザーID
+admin_user_ids = [1073863060843937812, 1175571621025689661]
 
 # DM送信対象のユーザーIDリスト
-target_user_ids = [1175571621025689661, 1073863060843937812]  # DMを送信する対象ユーザーのID
+target_user_ids = [1175571621025689661, 1073863060843937812]
 
 # 状態管理
 welcome_sent = False
@@ -52,7 +64,7 @@ async def notify_admins(message):
         try:
             admin_user = await bot.fetch_user(admin_user_id)
             if admin_user:
-                async with lock:  # ロックを使用してリソース競合を防止
+                async with lock:
                     await admin_user.send(message)
                 logger.info(f"管理者 {admin_user_id} にメッセージを送信しました。")
             else:
@@ -60,15 +72,31 @@ async def notify_admins(message):
         except Exception as e:
             logger.error(f"管理者 {admin_user_id} への通知に失敗しました: {e}")
 
-# /restartコマンドの実装
+# テキストコマンド: /restart
 @bot.command()
-@commands.has_permissions(administrator=True)  # 管理者権限が必要
+@commands.has_permissions(administrator=True)
 async def restart(ctx):
-    """Botを再起動するコマンド"""
-    logger.info("Restart command invoked.")
+    """Botを再起動するテキストコマンド"""
+    logger.info("Text-based restart command invoked.")
     await ctx.send("再起動しています... 🔄")
-    await bot.close()  # Botのセッションを閉じる
-    os.execl(sys.executable, sys.executable, *sys.argv)  # プロセスを再起動
+    await bot.close()
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+# スラッシュコマンド: /restart
+@bot.tree.command(name="restart", description="Botを再起動するスラッシュコマンド")
+@app_commands.checks.has_permissions(administrator=True)
+async def restart_slash(interaction: discord.Interaction):
+    """Botを再起動するスラッシュコマンド"""
+    logger.info("Slash-based restart command invoked.")
+    await interaction.response.send_message("再起動しています... 🔄")
+    await bot.close()
+    os.execl(sys.executable, sys.executable, *sys.argv)
+
+# 権限エラーのハンドリング
+@restart_slash.error
+async def restart_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.MissingPermissions):
+        await interaction.response.send_message("❌ 管理者権限が必要です。", ephemeral=True)
 
 # 新しいメンバーが参加したときの処理
 @bot.event
@@ -131,7 +159,7 @@ async def keep_alive():
     async with ClientSession() as session:
         while True:
             try:
-                async with lock:  # ロックで競合を防止
+                async with lock:
                     async with session.get("https://bot-2ptf.onrender.com/health") as resp:
                         logger.info(f"Pinged Render: {resp.status}")
             except Exception as e:
@@ -148,7 +176,7 @@ async def send_dm():
         try:
             user = await bot.fetch_user(user_id)
             if user:
-                async with lock:  # ロックを使用してリソース競合を防止
+                async with lock:
                     await user.send("これは1時間ごとのDMテストメッセージです。")
                 logger.info(f"DMを送信しました: {user.name}")
             else:
