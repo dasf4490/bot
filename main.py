@@ -54,17 +54,18 @@ async def notify_admins(message):
             if admin_user:
                 async with lock:  # ロックを使用してリソース競合を防止
                     await admin_user.send(message)
-                print(f"管理者 {admin_user_id} にメッセージを送信しました。")
+                logger.info(f"管理者 {admin_user_id} にメッセージを送信しました。")
             else:
-                print(f"管理者ユーザーID {admin_user_id} が見つかりませんでした。")
+                logger.warning(f"管理者ユーザーID {admin_user_id} が見つかりませんでした。")
         except Exception as e:
-            print(f"管理者 {admin_user_id} への通知に失敗しました: {e}")
+            logger.error(f"管理者 {admin_user_id} への通知に失敗しました: {e}")
 
 # /restartコマンドの実装
 @bot.command()
 @commands.has_permissions(administrator=True)  # 管理者権限が必要
 async def restart(ctx):
     """Botを再起動するコマンド"""
+    logger.info("Restart command invoked.")
     await ctx.send("再起動しています... 🔄")
     await bot.close()  # Botのセッションを閉じる
     os.execl(sys.executable, sys.executable, *sys.argv)  # プロセスを再起動
@@ -73,6 +74,7 @@ async def restart(ctx):
 @bot.event
 async def on_member_join(member):
     global welcome_sent
+    logger.info(f"New member joined: {member.name} ({member.id})")
     try:
         channel = bot.get_channel(welcome_channel_id)
         role = member.guild.get_role(role_id)
@@ -88,12 +90,12 @@ async def on_member_join(member):
             await asyncio.sleep(wait_time)
             welcome_sent = False
         elif not channel:
-            print("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
+            logger.warning("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
         elif not role:
-            print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
+            logger.warning("ロールが見つかりません。`role_id`を正しい値に設定してください。")
     except Exception as e:
         error_message = f"新規メンバー参加時のエラー: {e}"
-        print(error_message)
+        logger.error(error_message)
         await notify_admins(f"⚠️新規メンバー参加時のエラー:\n{error_message}")
 
 # リクエストログを記録するミドルウェア（`/health`リクエストを除外）
@@ -109,12 +111,13 @@ async def log_requests(request, handler):
 
 # ヘルスチェック用のエンドポイント
 async def health_check(request):
+    logger.info("Health check endpoint accessed.")
     current_time = time.time()
-    logger.info("Health check received")
     return web.json_response({"status": "ok"})
 
 # aiohttpサーバーを起動
 async def start_web_server():
+    logger.info("Starting web server...")
     app = web.Application(middlewares=[log_requests])
     app.router.add_get("/health", health_check)
     runner = web.AppRunner(app)
@@ -124,19 +127,22 @@ async def start_web_server():
 
 # 定期PingをRenderに送信してアイドル状態を防ぐ
 async def keep_alive():
+    logger.info("Starting keep_alive task...")
     async with ClientSession() as session:
         while True:
             try:
-                async with session.get("https://bot-2ptf.onrender.com/health") as resp:
-                    print(f"Pinged Render: {resp.status}")
+                async with lock:  # ロックで競合を防止
+                    async with session.get("https://bot-2ptf.onrender.com/health") as resp:
+                        logger.info(f"Pinged Render: {resp.status}")
             except Exception as e:
-                print(f"Failed to ping Render: {e}")
+                logger.error(f"Failed to ping Render: {e}")
             await asyncio.sleep(300)
 
 # 複数ユーザーに1時間ごとにDMを送信するタスク
 @tasks.loop(hours=1)
 async def send_dm():
     """1時間ごとにユーザーにDMを送信し、結果を管理者に報告する"""
+    logger.info("Running send_dm task...")
     no_errors = True
     for user_id in target_user_ids:
         try:
@@ -144,13 +150,13 @@ async def send_dm():
             if user:
                 async with lock:  # ロックを使用してリソース競合を防止
                     await user.send("これは1時間ごとのDMテストメッセージです。")
-                print(f"DMを送信しました: {user.name}")
+                logger.info(f"DMを送信しました: {user.name}")
             else:
-                print(f"指定されたユーザーが見つかりませんでした（ID: {user_id}）。")
+                logger.warning(f"指定されたユーザーが見つかりませんでした（ID: {user_id}）。")
         except Exception as e:
             no_errors = False
             error_message = f"ユーザーID {user_id} へのDM送信中にエラーが発生しました: {e}"
-            print(error_message)
+            logger.error(error_message)
             await notify_admins(f"⚠️エラーが発生しました:\n{error_message}")
 
     if no_errors:
@@ -160,15 +166,16 @@ async def send_dm():
 # Bot起動時にタスクを確認し、開始
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    logger.info(f'Logged in as {bot.user}')
     if not send_dm.is_running():
-        print("send_dmタスクを開始します...")
+        logger.info("Starting send_dm task...")
         send_dm.start()
     else:
-        print("send_dmタスクは既に実行中です。")
+        logger.info("send_dm task is already running.")
 
 # メイン関数でBotとWebサーバーを並行実行
 async def main():
+    logger.info("Starting main function...")
     await asyncio.gather(
         bot.start(token),   # Discord Botを起動
         start_web_server(),  # Webサーバーを起動
@@ -179,4 +186,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Bot shutting down...")
+        logger.info("Bot shutting down...")
