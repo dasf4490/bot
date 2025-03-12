@@ -1,7 +1,8 @@
 import discord
 from discord.ext import tasks
 import asyncio
-import os  # 必要なインポートを追加
+import os
+from aiohttp import web  # ヘルスチェック用ライブラリ
 
 # 環境変数からトークンを取得
 token = os.getenv("DISCORD_TOKEN")
@@ -22,6 +23,19 @@ welcome_channel_id = 1165799413558542446  # ウェルカムメッセージを送
 role_id = 1165785520593436764  # メンションしたいロールのID
 welcome_sent = False  # フラグで送信状況を管理
 wait_time = 20  # 秒単位の待機時間
+
+# ヘルスチェック用のエンドポイント
+async def health_check(request):
+    return web.json_response({"status": "ok"})
+
+# aiohttpサーバーを起動
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get("/health", health_check)  # ヘルスチェックパスを追加
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)  # ポート8080で起動
+    await site.start()
 
 @client.event
 async def on_ready():
@@ -45,5 +59,16 @@ async def on_member_join(member):
     elif not role:
         print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
 
-# ボットを起動
-client.run(token)
+# メイン関数でBotとWebサーバーを並行実行
+async def main():
+    await asyncio.gather(
+        client.start(token),  # Discord Botを起動
+        start_web_server()    # ヘルスチェック用のWebサーバーを起動
+    )
+
+# 実行
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot shutting down...")
