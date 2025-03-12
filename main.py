@@ -2,9 +2,9 @@ import discord
 from discord.ext import tasks
 import asyncio
 import os
-from aiohttp import web  # ヘルスチェック用ライブラリ
-import logging  # ログ用のライブラリ
-from aiohttp import ClientSession  # 定期Pingのためのクライアントセッション
+from aiohttp import web
+import logging
+from aiohttp import ClientSession
 
 # 環境変数からトークンを取得
 token = os.getenv("DISCORD_TOKEN")
@@ -40,10 +40,10 @@ logger = logging.getLogger("aiohttp.server")
 @web.middleware
 async def log_requests(request, handler):
     peername = request.transport.get_extra_info("peername")  # クライアントIPとポート情報を取得
-    client_ip = peername[0] if peername else "Unknown IP"   # IPアドレスを取得
-    client_port = peername[1] if peername else "Unknown Port"  # ポート番号を取得
-    logger.info(f"{client_ip}:{client_port} - {request.method} {request.path}")  # 詳細ログ出力
-    response = await handler(request)  # ハンドラーでリクエストを処理
+    client_ip = peername[0] if peername else "Unknown IP"
+    client_port = peername[1] if peername else "Unknown Port"
+    logger.info(f"{client_ip}:{client_port} - {request.method} {request.path}")
+    response = await handler(request)
     return response
 
 # ヘルスチェック用のエンドポイント
@@ -52,8 +52,8 @@ async def health_check(request):
 
 # aiohttpサーバーを起動
 async def start_web_server():
-    app = web.Application(middlewares=[log_requests])  # ミドルウェアをアプリに追加
-    app.router.add_get("/health", health_check)  # ヘルスチェックパスを追加
+    app = web.Application(middlewares=[log_requests])
+    app.router.add_get("/health", health_check)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)  # ポート8080で起動
@@ -74,9 +74,9 @@ async def keep_alive():
 async def notify_admins(error_message):
     for admin_user_id in admin_user_ids:
         try:
-            admin_user = await client.fetch_user(admin_user_id)  # 管理者ユーザーを取得
+            admin_user = await client.fetch_user(admin_user_id)
             if admin_user:
-                # 日本語でメッセージを送信
+                # 日本語でエラーメッセージを送信
                 await admin_user.send(f"⚠️エラーが発生しました:\n{error_message}\n詳細を確認してください。")
                 print(f"Admin {admin_user_id} に通知を送りました。")
             else:
@@ -84,7 +84,7 @@ async def notify_admins(error_message):
         except Exception as e:
             print(f"管理者 {admin_user_id} への通知に失敗しました: {e}")
 
-# WebSocket接続の切断時の対処
+# WebSocket接続の切断時の自動再接続
 @client.event
 async def on_disconnect():
     print("Disconnected from Discord. Reconnecting...")
@@ -113,8 +113,8 @@ async def on_ready():
 async def on_member_join(member):
     global welcome_sent
     try:
-        channel = client.get_channel(welcome_channel_id)  # 特定のチャンネルを取得
-        role = member.guild.get_role(role_id)  # サーバーからロールオブジェクトを取得
+        channel = client.get_channel(welcome_channel_id)
+        role = member.guild.get_role(role_id)
 
         if not welcome_sent and channel and role:
             welcome_sent = True
