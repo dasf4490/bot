@@ -41,6 +41,9 @@ wait_time = 50  # 秒単位の待機時間
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("aiohttp.server")
 
+# ロックの導入
+lock = asyncio.Lock()
+
 # 管理者に通知を送信する関数
 async def notify_admins(message):
     """管理者にメッセージをDMで送信する"""
@@ -48,7 +51,8 @@ async def notify_admins(message):
         try:
             admin_user = await client.fetch_user(admin_user_id)
             if admin_user:
-                await admin_user.send(message)
+                async with lock:  # ロックを使用してリソース競合を防止
+                    await admin_user.send(message)
                 print(f"管理者 {admin_user_id} にメッセージを送信しました。")
             else:
                 print(f"管理者ユーザーID {admin_user_id} が見つかりませんでした。")
@@ -96,12 +100,13 @@ async def keep_alive():
 @tasks.loop(hours=1)
 async def send_dm():
     """1時間ごとにユーザーにDMを送信し、結果を管理者に報告する"""
-    no_errors = True  # エラー発生の有無を管理
+    no_errors = True
     for user_id in target_user_ids:
         try:
             user = await client.fetch_user(user_id)
             if user:
-                await user.send("これは1時間ごとのDMテストメッセージです。")
+                async with lock:  # ロックを使用してリソース競合を防止
+                    await user.send("これは1時間ごとのDMテストメッセージです。")
                 print(f"DMを送信しました: {user.name}")
             else:
                 print(f"指定されたユーザーが見つかりませんでした（ID: {user_id}）。")
@@ -111,7 +116,6 @@ async def send_dm():
             print(error_message)
             await notify_admins(f"⚠️エラーが発生しました:\n{error_message}")
 
-    # エラーがなかった場合、管理者にその旨を通知
     if no_errors:
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await notify_admins(f"✅ 過去1時間でエラーは発生しませんでした。\n実行時間: {current_time}")
@@ -156,24 +160,7 @@ async def on_member_join(member):
 # WebSocket切断時の再接続
 @client.event
 async def on_disconnect():
-    print("Disconnected from Discord. Reconnecting...")
-    while True:
-        try:
-            await client.connect()
-            print("Reconnected successfully.")
-            break
-        except Exception as e:
-            error_message = f"再接続中にエラーが発生しました: {e}"
-            print(error_message)
-            await notify_admins(f"⚠️再接続中にエラーが発生しました:\n{error_message}")
-            await asyncio.sleep(5)
-
-# プログラムのクラッシュを防ぐための処理
-@client.event
-async def on_error(event, *args, **kwargs):
-    error_message = f"エラーが発生しました。イベント: {event}, 引数: {args}, キーワード引数: {kwargs}"
-    print(error_message)
-    await notify_admins(f"⚠️エラーが発生しました:\n{error_message}")
+    print("Disconnected from Discord. Automatic reconnection will be handled.")  # 自動再接続に任せる
 
 # メイン関数でBotとWebサーバーを並行実行
 async def main():
