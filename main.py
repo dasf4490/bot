@@ -21,8 +21,12 @@ client = discord.Client(intents=intents)
 
 welcome_channel_id = 1165799413558542446  # ウェルカムメッセージを送信するチャンネルID
 role_id = 1165785520593436764  # メンションしたいロールのID
+
+# 管理者のDiscordユーザーIDリスト（複数登録）
+admin_user_ids = [1073863060843937812, 1175571621025689661]  # 管理者のDiscordユーザーIDをリストに追加
+
 welcome_sent = False  # フラグで送信状況を管理
-wait_time = 20  # 秒単位の待機時間
+wait_time = 50  # 秒単位の待機時間
 
 # ヘルスチェック用のエンドポイント
 async def health_check(request):
@@ -37,6 +41,39 @@ async def start_web_server():
     site = web.TCPSite(runner, "0.0.0.0", 8080)  # ポート8080で起動
     await site.start()
 
+# 管理者にエラーメッセージを送信
+async def notify_admins(error_message):
+    for admin_user_id in admin_user_ids:
+        try:
+            admin_user = await client.fetch_user(admin_user_id)  # 管理者ユーザーを取得
+            if admin_user:
+                await admin_user.send(f"⚠️エラーが発生しました: {error_message}")
+                print(f"Admin {admin_user_id} notified about the error.")
+            else:
+                print(f"Admin user with ID {admin_user_id} not found.")
+        except Exception as e:
+            print(f"Failed to notify admin {admin_user_id}: {e}")
+
+# WebSocket接続の切断時の対処
+@client.event
+async def on_disconnect():
+    print("Disconnected from Discord. Reconnecting...")
+    while True:
+        try:
+            await client.connect()  # 再接続を試みる
+            print("Reconnected successfully.")
+            break
+        except Exception as e:
+            print(f"Reconnection failed: {e}. Retrying in 5 seconds...")
+            await asyncio.sleep(5)  # 再接続待機時間
+
+# プログラムのクラッシュを防ぐための対処と管理者通知
+@client.event
+async def on_error(event, *args, **kwargs):
+    error_message = f"An error occurred in event '{event}': {args}, {kwargs}"
+    print(error_message)
+    await notify_admins(error_message)  # エラーを管理者に通知
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
@@ -44,20 +81,25 @@ async def on_ready():
 @client.event
 async def on_member_join(member):
     global welcome_sent
-    channel = client.get_channel(welcome_channel_id)  # 特定のチャンネルを取得
-    role = member.guild.get_role(role_id)  # サーバーからロールオブジェクトを取得
+    try:
+        channel = client.get_channel(welcome_channel_id)  # 特定のチャンネルを取得
+        role = member.guild.get_role(role_id)  # サーバーからロールオブジェクトを取得
 
-    if not welcome_sent and channel and role:
-        welcome_sent = True
-        await channel.send(f"こんにちは！{role.mention}の皆さん。「おしゃべりを始める前に、もういくつかステップが残っています。」と出ていると思うので、「了解」を押してルールに同意しましょう。その後にhttps://discord.com/channels/1165775639798878288/1165775640918773843で認証をして、みんなとお喋りをしましょう！ ")
-        
-        # 一定時間後にフラグをリセット
-        await asyncio.sleep(wait_time)
-        welcome_sent = False
-    elif not channel:
-        print("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
-    elif not role:
-        print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
+        if not welcome_sent and channel and role:
+            welcome_sent = True
+            await channel.send(f"こんにちは！{role.mention}の皆さん。「おしゃべりを始める前に、もういくつかステップが残っています。」と出ていると思うので、「了解」を押してルールに同意しましょう。その後にhttps://discord.com/channels/1165775639798878288/1165775640918773843で認証をして、みんなとお喋りをしましょう！ ")
+            
+            # 一定時間後にフラグをリセット
+            await asyncio.sleep(wait_time)
+            welcome_sent = False
+        elif not channel:
+            print("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
+        elif not role:
+            print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
+    except Exception as e:
+        error_message = f"Error in on_member_join: {e}"
+        print(error_message)
+        await notify_admins(error_message)  # エラーを管理者に通知
 
 # メイン関数でBotとWebサーバーを並行実行
 async def main():
