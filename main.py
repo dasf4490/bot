@@ -115,9 +115,29 @@ async def on_error(event, *args, **kwargs):
     print(error_message)
     await notify_admins(error_message)  # エラーを管理者に通知
 
+# 1時間ごとにDMを送信するタスク
+@tasks.loop(hours=1)
+async def send_dm():
+    try:
+        target_user_id = 123456789012345678  # ユーザーIDを指定してください
+        user = await client.fetch_user(target_user_id)
+        if user:
+            await user.send("これは1時間ごとのDMテストメッセージです。")
+            print(f"DMを送信しました: {user.name}")
+        else:
+            print("指定されたユーザーが見つかりませんでした。")
+    except Exception as e:
+        print(f"DM送信中にエラーが発生しました: {e}")
+
+# Bot起動時にタスクの状態を確認し、開始
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
+    if not send_dm.is_running():
+        print("send_dmタスクを開始します...")
+        send_dm.start()
+    else:
+        print("send_dmタスクは既に実行中です。")
 
 # 新しいメンバーが参加した際の処理
 @client.event
