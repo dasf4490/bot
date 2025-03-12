@@ -56,9 +56,9 @@ last_health_check_time = 0  # 初期値を0に設定
 async def health_check(request):
     global last_health_check_time
     current_time = time.time()  # 現在のタイムスタンプを取得
-    if current_time - last_health_check_time >= 60:  # 60秒以上経過している場合のみログ出力
+    if current_time - last_health_check_time >= 60:  # 最後のログ出力から60秒以上経過している場合
         last_health_check_time = current_time
-        logger.info("Health check received")  # ヘルスチェックのログを出力
+        logger.info("Health check received")  # ログを出力
     return web.json_response({"status": "ok"})  # 常に200 OKを返す
 
 # aiohttpサーバーを起動
