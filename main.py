@@ -1,23 +1,7 @@
 import discord
 from discord.ext import tasks
 import asyncio
-import os
-from flask import Flask
-from threading import Thread
-
-# Flaskウェブサーバーの設定
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
+import os  # 必要なインポートを追加
 
 # 環境変数からトークンを取得
 token = os.getenv("DISCORD_TOKEN")
@@ -37,7 +21,7 @@ client = discord.Client(intents=intents)
 welcome_channel_id = 1165799413558542446  # ウェルカムメッセージを送信するチャンネルID
 role_id = 1165785520593436764  # メンションしたいロールのID
 welcome_sent = False  # フラグで送信状況を管理
-wait_time = 50  # 秒単位の待機時間
+wait_time = 20  # 秒単位の待機時間
 
 @client.event
 async def on_ready():
@@ -52,7 +36,7 @@ async def on_member_join(member):
     if not welcome_sent and channel and role:
         welcome_sent = True
         await channel.send(f"こんにちは！{role.mention}の皆さん。「おしゃべりを始める前に、もういくつかステップが残っています。」と出ていると思うので、「了解」を押してルールに同意しましょう。その後にhttps://discord.com/channels/1165775639798878288/1165775640918773843で認証をして、みんなとお喋りをしましょう！ ")
-
+        
         # 一定時間後にフラグをリセット
         await asyncio.sleep(wait_time)
         welcome_sent = False
@@ -60,9 +44,6 @@ async def on_member_join(member):
         print("チャンネルが見つかりません。`welcome_channel_id`を正しい値に設定してください。")
     elif not role:
         print("ロールが見つかりません。`role_id`を正しい値に設定してください。")
-
-# ウェブサーバーを起動して稼働状態を維持
-keep_alive()
 
 # ボットを起動
 client.run(token)
