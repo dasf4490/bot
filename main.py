@@ -7,6 +7,7 @@ import logging
 from aiohttp import ClientSession
 import re  # ログ内のエラー検出のために使用
 from datetime import datetime, timedelta  # 時間操作のために使用
+import time  # タイムスタンプ取得のために使用
 
 # 環境変数からトークンを取得
 token = os.getenv("DISCORD_TOKEN")
@@ -48,9 +49,16 @@ async def log_requests(request, handler):
     response = await handler(request)
     return response
 
-# ヘルスチェック用のエンドポイント
+# ヘルスチェック用のエンドポイント（1分間隔でログ出力を制限）
+last_health_check_time = 0  # 最後のヘルスチェックログタイムスタンプを追跡
+
 async def health_check(request):
-    return web.json_response({"status": "ok"})
+    global last_health_check_time
+    current_time = time.time()  # 現在のタイムスタンプを取得
+    if current_time - last_health_check_time >= 60:  # 60秒以上経過している場合のみログ出力
+        last_health_check_time = current_time
+        logger.info("Health check received")  # ヘルスチェックのログを出力
+    return web.json_response({"status": "ok"})  # 常に200 OKを返す
 
 # aiohttpサーバーを起動
 async def start_web_server():
@@ -138,55 +146,12 @@ async def on_member_join(member):
         print(error_message)
         await notify_admins(error_message)  # エラーを管理者に通知
 
-# ログ監視タスクを追加
-async def monitor_logs():
-    log_file_path = "app.log"  # ログファイルのパスを指定
-    last_report_time = datetime.now()  # 最後に正常性を報告した時間
-    last_error_report_time = None
-    error_detected = False
-    error_count = 0
-
-    while True:
-        try:
-            with open(log_file_path, "r") as log_file:
-                lines = log_file.readlines()
-                for line in lines:
-                    # エラーパターンを検索
-                    if re.search(r"ERROR|Exception", line, re.IGNORECASE):
-                        error_detected = True
-                        error_count += 1
-                        print(f"エラー検出: {line.strip()}")  # コンソールにエラー出力
-
-            now = datetime.now()
-
-            # エラーが発生している場合は即座に通知
-            if error_detected:
-                if not last_error_report_time or (now - last_error_report_time).seconds >= 300:  # 5分間隔でエラー通知
-                    await notify_admins(f"現在のログでエラーが {error_count} 件検出されました。ログを確認してください。")
-                    last_error_report_time = now
-                # 状態リセット
-                error_detected = False
-                error_count = 0
-
-            # エラーがなく、1時間経過した場合に正常通知を送信
-            if (now - last_report_time) >= timedelta(hours=1):
-                await notify_admins("現在エラーは検出されていません。すべて正常です！")
-                last_report_time = now
-
-        except FileNotFoundError:
-            print("ログファイルが見つかりません。ファイルパスを確認してください。")
-        except Exception as e:
-            print(f"ログ監視中にエラーが発生しました: {e}")
-
-        await asyncio.sleep(60)  # 60秒ごとにログをチェック
-
 # メイン関数でBotとWebサーバーを並行実行
 async def main():
     await asyncio.gather(
         client.start(token),   # Discord Botを起動
         start_web_server(),    # ヘルスチェック用のWebサーバーを起動
-        keep_alive(),          # 定期Pingタスクを実行
-        monitor_logs()         # ログ監視タスクを実行
+        keep_alive()           # 定期Pingタスクを実行
     )
 
 # 実行
