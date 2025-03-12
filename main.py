@@ -19,6 +19,13 @@ intents = discord.Intents.default()
 intents.members = True
 client = discord.Client(intents=intents)
 
+# リクエストログを記録するミドルウェア
+@web.middleware
+async def log_requests(request, handler):
+    print(f"Request received: {request.method} {request.path}")  # リクエスト情報をログに出力
+    response = await handler(request)  # ハンドラーでリクエストを処理
+    return response
+
 # ヘルスチェック用のエンドポイント
 async def health_check(request):
     return web.json_response({"status": "ok"})  # ヘルスチェック用レスポンス
@@ -28,7 +35,7 @@ async def root_health_check(request):
 
 # aiohttpサーバーを起動
 async def start_web_server():
-    app = web.Application()
+    app = web.Application(middlewares=[log_requests])  # ミドルウェアをアプリに追加
     app.router.add_get("/health", health_check)  # `/health` パスを設定
     app.router.add_get("/", root_health_check)  # `/` パスを設定
     runner = web.AppRunner(app)
