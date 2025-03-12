@@ -191,3 +191,7 @@ async def main():
 
 # 実行
 if __name__ == "__main__":
+    try:
+        asyncio.run(main())  # メイン関数を非同期で実行
+    except KeyboardInterrupt:
+        print("Bot shutting down...")
